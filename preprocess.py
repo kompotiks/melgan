@@ -19,7 +19,7 @@ def main(hp, args):
                         mel_fmin=hp.audio.mel_fmin,
                         mel_fmax=hp.audio.mel_fmax)
 
-    wav_files = glob.glob(os.path.join(args.data_path, '**', '*.wav'), recursive=True)
+    wav_files = glob.glob(os.path.join(args.data_path, '**', '**', '*.wav'), recursive=True)
     mel_path = hp.data.mel_path
     os.makedirs(mel_path, exist_ok=True)
 
