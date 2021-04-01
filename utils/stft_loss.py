@@ -126,6 +126,10 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         """
         sc_loss = 0.0
         mag_loss = 0.0
+
+        x = x.cuda()
+        y = y.cuda()
+
         for f in self.stft_losses:
             sc_l, mag_l = f(x, y)
             sc_loss += sc_l
