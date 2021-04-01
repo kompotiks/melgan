@@ -14,20 +14,19 @@ from utils.stft_loss import MultiResolutionSTFTLoss
 
 def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, hp_str):
     model_g = Generator(hp.audio.n_mel_channels, hp.model.n_residual_layers,
-                        ratios=hp.model.generator_ratio, mult = hp.model.mult,
-                        out_band = hp.model.out_channels).cuda()
-    print("Generator : \n",model_g)
+                        ratios=hp.model.generator_ratio, mult=hp.model.mult,
+                        out_band=hp.model.out_channels).cuda()
+    # print("Generator : \n",model_g)
 
     model_d = MultiScaleDiscriminator(hp.model.num_D, hp.model.ndf, hp.model.n_layers,
                                       hp.model.downsampling_factor, hp.model.disc_out).cuda()
-    print("Discriminator : \n", model_d)
+    # print("Discriminator : \n", model_d)
     optim_g = torch.optim.Adam(model_g.parameters(),
-        lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
+                               lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
     optim_d = torch.optim.Adam(model_d.parameters(),
-        lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
+                               lr=hp.train.adam.lr, betas=(hp.train.adam.beta1, hp.train.adam.beta2))
 
     githash = get_commit_hash()
-
 
     init_epoch = -1
     step = 0
@@ -64,13 +63,14 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
         sub_stft_loss = MultiResolutionSTFTLoss(hp.subband_stft_loss_params.fft_sizes,
                                                 hp.subband_stft_loss_params.hop_sizes,
                                                 hp.subband_stft_loss_params.win_lengths)
-        
+
         pqmf = PQMF()
 
-        for epoch in itertools.count(init_epoch+1):
+        for epoch in itertools.count(init_epoch + 1):
             if epoch % hp.log.validation_interval == 0:
                 with torch.no_grad():
-                    validate(hp, args, model_g, model_d, valloader, stft_loss, sub_stft_loss, criterion, pqmf, writer, step)
+                    validate(hp, args, model_g, model_d, valloader, stft_loss, sub_stft_loss, criterion, pqmf, writer,
+                             step)
 
             trainloader.dataset.shuffle_mapping()
             loader = tqdm.tqdm(trainloader, desc='Loading train data')
@@ -78,17 +78,15 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
             avg_d_loss = []
             avg_adv_loss = []
             for (melG, audioG), (melD, audioD) in loader:
-                melG = melG.cuda()      # torch.Size([16, 80, 64])
+                melG = melG.cuda()  # torch.Size([16, 80, 64])
                 audioG = audioG.cuda()  # torch.Size([16, 1, 16000])
-                melD = melD.cuda()      # torch.Size([16, 80, 64])
-                audioD = audioD.cuda()  #torch.Size([16, 1, 16000]
+                melD = melD.cuda()  # torch.Size([16, 80, 64])
+                audioD = audioD.cuda()  # torch.Size([16, 1, 16000]
 
                 # generator
                 optim_g.zero_grad()
                 fake_audio = model_g(melG)[:, :, :hp.audio.segment_length]  # torch.Size([16, 1, 12800])
 
-                
-                
                 loss_g = 0.0
 
                 # reconstruct the signal from multi-band signal
@@ -97,12 +95,10 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
                     y_mb_ = fake_audio
                     fake_audio = pqmf.synthesis(y_mb_)
 
-
                 sc_loss, mag_loss = stft_loss(fake_audio[:, :, :audioG.size(2)].squeeze(1), audioG.squeeze(1))
                 loss_g = sc_loss + mag_loss
 
                 if hp.model.use_subband_stft_loss:
-                    
                     loss_g *= 0.5  # for balancing with subband stft loss
                     y_mb = pqmf.analysis(audioG)
                     y_mb = y_mb.view(-1, y_mb.size(2))  # (B, C, T) -> (B x C, T)
@@ -118,17 +114,14 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
                     for feats_fake, score_fake in disc_fake:
                         # adv_loss += torch.mean(torch.sum(torch.pow(score_fake - 1.0, 2), dim=[1, 2]))
                         adv_loss += criterion(score_fake, torch.ones_like(score_fake))
-                    adv_loss = adv_loss / len(disc_fake) # len(disc_fake) = 3
+                    adv_loss = adv_loss / len(disc_fake)  # len(disc_fake) = 3
 
-
-
-                    if hp.model.feat_loss :
+                    if hp.model.feat_loss:
                         for (feats_fake, score_fake), (feats_real, _) in zip(disc_fake, disc_real):
                             for feat_f, feat_r in zip(feats_fake, feats_real):
                                 adv_loss += hp.model.feat_match * torch.mean(torch.abs(feat_f - feat_r))
 
                     loss_g += hp.model.lambda_adv * adv_loss
-            
 
                 loss_g.backward()
                 optim_g.step()
@@ -151,8 +144,8 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
                         for (_, score_fake), (_, score_real) in zip(disc_fake, disc_real):
                             loss_d_real += criterion(score_real, torch.ones_like(score_real))
                             loss_d_fake += criterion(score_fake, torch.zeros_like(score_fake))
-                        loss_d_real = loss_d_real / len(disc_real) # len(disc_real) = 3
-                        loss_d_fake = loss_d_fake / len(disc_fake) # len(disc_fake) = 3
+                        loss_d_real = loss_d_real / len(disc_real)  # len(disc_real) = 3
+                        loss_d_fake = loss_d_fake / len(disc_fake)  # len(disc_fake) = 3
                         loss_d = loss_d_real + loss_d_fake
                         loss_d.backward()
                         optim_d.step()
@@ -173,13 +166,14 @@ def train(args, pt_dir, chkpt_path, trainloader, valloader, writer, logger, hp, 
 
                 if step % hp.log.summary_interval == 0:
                     writer.log_training(loss_g, loss_d_avg, adv_loss, step)
-                    loader.set_description("Avg : g %.04f d %.04f ad %.04f| step %d" % (sum(avg_g_loss) / len(avg_g_loss),
-                                                                                sum(avg_d_loss) / len(avg_d_loss),
-                                                                                sum(avg_adv_loss) / len(avg_adv_loss),
-                                                                                step))
+                    loader.set_description(
+                        "Avg : g %.04f d %.04f ad %.04f| step %d" % (sum(avg_g_loss) / len(avg_g_loss),
+                                                                     sum(avg_d_loss) / len(avg_d_loss),
+                                                                     sum(avg_adv_loss) / len(avg_adv_loss),
+                                                                     step))
             if epoch % hp.log.save_interval == 0:
                 save_path = os.path.join(pt_dir, '%s_%s_%04d.pt'
-                    % (args.name, githash, epoch))
+                                         % (args.name, githash, epoch))
                 torch.save({
                     'model_g': model_g.state_dict(),
                     'model_d': model_d.state_dict(),
